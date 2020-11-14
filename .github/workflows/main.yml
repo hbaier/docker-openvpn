@@ -1,0 +1,76 @@
+name: docker-multiarch
+on:
+  push:
+    branches:
+      - experimental
+      - testing
+  release:
+    types:
+      - released
+jobs:
+  build:
+    runs-on: ubuntu-18.04
+    env:
+      DOCKER_BUILD_PLATFORMS: "linux/386,linux/amd64,linux/arm64,linux/arm/v6,linux/arm/v7,linux/ppc64le,linux/s390x"
+      DOCKER_IMAGE_NAME: "hbaier/openvpn"
+      DOCKER_RUN_CMD: "--show-curves"
+      DOCKER_RUN_OPTIONS: "--rm --entrypoint /usr/sbin/openvpn"
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+      - name: Checkout git repository
+        uses: actions/checkout@v2
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+        with:
+          driver-opts: network=host
+      - name: Build and push to local registry
+        uses: docker/build-push-action@v2
+        with:
+          platforms: ${{ env.DOCKER_BUILD_PLATFORMS }}
+          push: true
+          tags: localhost:5000/myimage
+      - name: Test Docker image
+        run: docker run ${DOCKER_RUN_OPTIONS} localhost:5000/myimage ${DOCKER_RUN_CMD}
+      - name: Create Docker image tags
+        id: create_tags
+        run: |
+          function join { local delimiter=$1; shift; echo -n "$1"; shift; printf "%s" "${@/#/$delimiter}"; }
+          if [ ${GITHUB_REF:5:3} = 'tag' ]; then
+            if [[ ${GITHUB_REF#refs/tags/} =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              DOCKER_TAG_PATCH=${GITHUB_REF#refs/tags/} && DOCKER_TAG_PATCH=${DOCKER_TAG_PATCH:1}
+              DOCKER_TAG_MINOR=${DOCKER_TAG_PATCH%.*}
+              DOCKER_TAG_MAJOR=${DOCKER_TAG_PATCH%.*.*}
+              DOCKER_TAG_LATEST=latest
+              echo "::set-output name=tags::$(join "," \
+                ${DOCKER_IMAGE_NAME}:${DOCKER_TAG_PATCH} \
+                ${DOCKER_IMAGE_NAME}:${DOCKER_TAG_MINOR} \
+                ${DOCKER_IMAGE_NAME}:${DOCKER_TAG_MAJOR} \
+                ${DOCKER_IMAGE_NAME}:${DOCKER_TAG_LATEST})"
+            else
+              exit 1
+            fi
+          else
+            DOCKER_TAG_BRANCH=${GITHUB_REF#refs/heads/}
+            DOCKER_TAG_BRANCH_DATE=${DOCKER_TAG_BRANCH}-$(date +%Y%m%d)
+            echo "::set-output name=tags::$(join "," \
+              ${DOCKER_IMAGE_NAME}:${DOCKER_TAG_BRANCH} \
+              ${DOCKER_IMAGE_NAME}:${DOCKER_TAG_BRANCH_DATE})"
+          fi
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+      - name: Push to Docker registry
+        uses: docker/build-push-action@v2
+        with:
+          platforms: ${{ env.DOCKER_BUILD_PLATFORMS }}
+          push: true
+          tags: ${{ steps.create_tags.outputs.tags }}
+          cache-from: type=registry,ref=localhost:5000/myimage

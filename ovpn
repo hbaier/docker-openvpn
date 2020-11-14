@@ -1,0 +1,113 @@
+#!/bin/bash
+
+set -e
+
+print_usage() {
+  echo "Usage: $(basename $0) option [parameter]"
+  echo
+  echo 'Options:'
+  echo '  -p|--print <filename_base>: Print the OpenVPN client configuration file of'
+  echo '                              the given Easy-RSA filename base.'
+  echo '  -h|--help                 : Show options'
+
+  exit 1
+}
+
+get_ovpn() {
+  local -n lines=$1
+
+  lines+=( ";${filenameBase}" )
+  lines+=( 'client' )
+
+  # tunnel options
+  lines+=( "dev ${OPENVPN_DEV:-tun}" )
+  if [ "${OPENVPN_PROTO:-udp}" = 'tcp' ]; then
+    lines+=( 'proto tcp-client' )
+  else
+    lines+=( 'proto udp' )
+    lines+=( 'explicit-exit-notify 1' )
+  fi
+  lines+=( "remote ${OPENVPN_REMOTE_HOST:-vpn.example.net} ${OPENVPN_REMOTE_PORT:-1194}" )
+  lines+=( 'nobind' )
+  lines+=( 'persist-key' )
+  lines+=( 'persist-tun' )
+  lines+=( 'resolv-retry infinite' )
+
+  # control channel options
+  lines+=( "tls-version-min ${OPENVPN_TLS_VERSION_MIN:-1.0}" )
+  lines+=( 'remote-cert-tls server' )
+  lines+=( 'auth-nocache' )
+
+  # data channel options
+  lines+=( "auth ${OPENVPN_AUTH:-SHA1}" )
+  lines+=( "cipher ${OPENVPN_CIPHER:-BF-CBC}" )
+  lines+=( "ncp-ciphers ${OPENVPN_NCP_CIPHERS:-AES-256-GCM:AES-128-GCM}" )
+
+  # logging options
+  lines+=( "verb ${OPENVPN_VERB:-1}" )
+  lines+=( "mute ${OPENVPN_MUTE:-0}" )
+
+  # inline CA certificate
+  lines+=( '<ca>' )
+  if [ -f ${EASYRSA_PKI}/ca.crt ]; then
+    lines+=( "`awk /BEGIN/,/END/ < ${EASYRSA_PKI}/ca.crt`" )
+  else
+    echo "$(basename $0): CA certificate \"${EASYRSA_PKI}/ca.crt\" does not exist."
+    exit 1
+  fi
+  lines+=( '</ca>' )
+
+  # inline client certificate
+  lines+=( '<cert>' )
+  if [ -f ${EASYRSA_PKI}/issued/${filenameBase}.crt ]; then
+    lines+=( "`awk /BEGIN/,/END/ < ${EASYRSA_PKI}/issued/${filenameBase}.crt`" )
+  else
+    echo "$(basename $0): Client certificate \"${EASYRSA_PKI}/issued/${filenameBase}.crt\" does not exist."
+    exit 1
+  fi
+  lines+=( '</cert>' )
+
+  # inline client private key
+  lines+=( '<key>' )
+  if [ -f ${EASYRSA_PKI}/private/${filenameBase}.key ]; then
+    lines+=( "`awk /BEGIN/,/END/ < ${EASYRSA_PKI}/private/${filenameBase}.key`" )
+  else
+    echo "$(basename $0): Client key \"${EASYRSA_PKI}/private/${filenameBase}.key\" does not exist."
+    exit 1
+  fi
+  lines+=( '</key>' )
+
+  # inline OpenVPN static ta.key
+  lines+=( '<tls-crypt>' )
+  if [ -f ${OPENVPN_HOME}/ta.key ]; then
+    lines+=( "`awk /BEGIN/,/END/ < ${OPENVPN_HOME}/ta.key`" )
+  else
+    echo "$(basename $0): OpenVPN static ta.key \"${OPENVPN_HOME}/ta.key\" does not exist."
+    exit 1
+  fi
+  lines+=( '</tls-crypt>' )
+}
+
+if [ $# -eq 0 ]; then
+  echo -e "$(basename $0): Missing option\n" && print_usage
+else
+  opt=$1
+  case ${opt} in
+    -h|--help|help)
+      print_usage
+      ;;
+    -p|--print|print)
+      if [ $# -ne 2 ]; then
+        echo -e "$(basename $0): Syntax error\n" && print_usage
+      else
+        # print ovpn client configuration file
+        filenameBase=$2
+        OVPN_LINES=() && get_ovpn OVPN_LINES
+        printf '%s\n' "${OVPN_LINES[@]}"
+      fi
+      ;;
+    *)
+      echo -e "$(basename $0): Unrecognized option '${opt}'\n" && print_usage
+      ;;
+  esac
+fi

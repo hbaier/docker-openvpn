@@ -1,0 +1,49 @@
+version: "3"
+services:
+  openvpn:
+    image: hbaier/openvpn
+    container_name: openvpn
+    environment:
+      EASYRSA_ALGO: rsa
+      EASYRSA_CA_EXPIRE: 3650
+      EASYRSA_CERT_EXPIRE: 1080
+      EASYRSA_CERT_RENEW: 30
+      EASYRSA_CRL_DAYS: 180
+      EASYRSA_CURVE: secp521r1
+      EASYRSA_DN: cn_only
+      EASYRSA_KEY_SIZE: 4096
+      EASYRSA_REQ_CITY: "San Francisco"
+      EASYRSA_REQ_COUNTRY: US
+      EASYRSA_REQ_EMAIL: me@example.net
+      EASYRSA_REQ_ORG: "Copyleft Certificate Co"
+      EASYRSA_REQ_OU: "My Organizational Unit"
+      EASYRSA_REQ_PROVINCE: California
+      OPENVPN_AUTH: SHA512
+      OPENVPN_CIPHER: AES-256-GCM
+      OPENVPN_COMPRESS: ""
+      OPENVPN_DEV: tun
+      OPENVPN_HOME: /etc/openvpn
+      OPENVPN_KEEPALIVE_INTERVAL: 10
+      OPENVPN_KEEPALIVE_TIMEOUT: 120
+      OPENVPN_MAX_CLIENTS: 1024
+      OPENVPN_MUTE: 0
+      OPENVPN_NCP_CIPHERS: AES-256-GCM:AES-256-CBC
+      OPENVPN_OPTIONS_CUSTOM: ""
+      OPENVPN_PROTO: udp
+      OPENVPN_PUSH_ROUTE: ""
+      OPENVPN_REMOTE_HOST: vpn.example.net
+      OPENVPN_REMOTE_PORT: 1194
+      OPENVPN_SERVER: 10.8.0.0/24
+      OPENVPN_TLS_VERSION_MIN: 1.2
+      OPENVPN_TOPOLOGY: subnet
+      OPENVPN_VERB: 3
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "1194:1194/udp"
+    volumes:
+      - openvpn:/etc/openvpn
+    restart: unless-stopped
+volumes:
+  openvpn:
+    driver: "local"
